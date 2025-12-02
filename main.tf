@@ -26,6 +26,7 @@ module "calculate_subnets_ipv6" {
 resource "aws_vpc" "main" {
   count = var.create_vpc ? 1 : 0
 
+  region                           = var.region
   cidr_block                       = var.cidr_block
   ipv4_ipam_pool_id                = var.vpc_ipv4_ipam_pool_id
   ipv4_netmask_length              = var.vpc_ipv4_netmask_length
@@ -48,6 +49,7 @@ resource "aws_vpc" "main" {
 resource "aws_vpc_ipv4_cidr_block_association" "secondary" {
   count = (var.vpc_secondary_cidr && !var.create_vpc) ? 1 : 0
 
+  region            = var.region
   vpc_id            = var.vpc_id
   cidr_block        = local.cidr_block
   ipv4_ipam_pool_id = var.vpc_ipv4_ipam_pool_id
@@ -58,6 +60,7 @@ resource "aws_vpc_ipv4_cidr_block_association" "secondary" {
 resource "aws_subnet" "public" {
   for_each = contains(local.subnet_keys, "public") ? toset(local.azs) : toset([])
 
+  region                                         = var.region
   availability_zone                              = each.key
   vpc_id                                         = local.vpc.id
   cidr_block                                     = can(local.calculated_subnets["public"][each.key]) ? local.calculated_subnets["public"][each.key] : null
@@ -78,6 +81,7 @@ resource "aws_subnet" "public" {
 resource "aws_route_table" "public" {
   for_each = contains(local.subnet_keys, "public") ? toset(local.azs) : toset([])
 
+  region = var.region
   vpc_id = local.vpc.id
 
   tags = merge(
@@ -90,6 +94,7 @@ resource "aws_route_table" "public" {
 resource "aws_route_table_association" "public" {
   for_each = contains(local.subnet_keys, "public") ? toset(local.azs) : toset([])
 
+  region         = var.region
   subnet_id      = aws_subnet.public[each.key].id
   route_table_id = aws_route_table.public[each.key].id
 }
@@ -97,7 +102,9 @@ resource "aws_route_table_association" "public" {
 # Elastic IP - used in NAT gateways (if configured)
 resource "aws_eip" "nat" {
   for_each = toset(local.nat_configuration)
-  domain   = "vpc"
+
+  region = var.region
+  domain = "vpc"
 
   tags = merge(
     { Name = "nat-${local.subnet_names["public"]}-${each.key}" },
@@ -110,6 +117,7 @@ resource "aws_eip" "nat" {
 resource "aws_nat_gateway" "main" {
   for_each = toset(local.nat_configuration)
 
+  region        = var.region
   allocation_id = aws_eip.nat[each.key].id
   subnet_id     = aws_subnet.public[each.key].id
 
@@ -126,7 +134,9 @@ resource "aws_nat_gateway" "main" {
 
 # Internet gateway (if public subnets are created)
 resource "aws_internet_gateway" "main" {
-  count  = contains(local.subnet_keys, "public") ? 1 : 0
+  count = contains(local.subnet_keys, "public") ? 1 : 0
+
+  region = var.region
   vpc_id = local.vpc.id
 
   tags = merge(
@@ -138,7 +148,9 @@ resource "aws_internet_gateway" "main" {
 
 # Egress-only IGW (if indicated)
 resource "aws_egress_only_internet_gateway" "eigw" {
-  count  = var.vpc_egress_only_internet_gateway ? 1 : 0
+  count = var.vpc_egress_only_internet_gateway ? 1 : 0
+
+  region = var.region
   vpc_id = local.vpc.id
 
   tags = merge(
@@ -151,6 +163,7 @@ resource "aws_egress_only_internet_gateway" "eigw" {
 resource "aws_route" "public_to_igw" {
   for_each = contains(local.subnet_keys, "public") && !local.public_ipv6only && local.connect_to_igw ? toset(local.azs) : toset([])
 
+  region                 = var.region
   route_table_id         = aws_route_table.public[each.key].id
   destination_cidr_block = "0.0.0.0/0"
   gateway_id             = aws_internet_gateway.main[0].id
@@ -160,6 +173,7 @@ resource "aws_route" "public_to_igw" {
 resource "aws_route" "public_ipv6_to_igw" {
   for_each = contains(local.subnet_keys, "public") && (local.public_ipv6only || local.public_dualstack) && local.connect_to_igw ? toset(local.azs) : toset([])
 
+  region                      = var.region
   route_table_id              = aws_route_table.public[each.key].id
   destination_ipv6_cidr_block = "::/0"
   gateway_id                  = aws_internet_gateway.main[0].id
@@ -169,11 +183,11 @@ resource "aws_route" "public_ipv6_to_igw" {
 resource "aws_route" "public_to_tgw" {
   for_each = (contains(local.subnet_keys, "public") && contains(local.subnets_tgw_routed, "public")) ? toset(local.azs) : toset([])
 
+  region                     = var.region
   destination_cidr_block     = can(regex("^pl-", var.transit_gateway_routes["public"])) ? null : var.transit_gateway_routes["public"]
   destination_prefix_list_id = can(regex("^pl-", var.transit_gateway_routes["public"])) ? var.transit_gateway_routes["public"] : null
-
-  transit_gateway_id = var.transit_gateway_id
-  route_table_id     = aws_route_table.public[each.key].id
+  transit_gateway_id         = var.transit_gateway_id
+  route_table_id             = aws_route_table.public[each.key].id
 
   depends_on = [
     aws_ec2_transit_gateway_vpc_attachment.tgw
@@ -184,11 +198,11 @@ resource "aws_route" "public_to_tgw" {
 resource "aws_route" "ipv6_public_to_tgw" {
   for_each = (contains(local.subnet_keys, "public") && contains(local.ipv6_subnets_tgw_routed, "public")) ? toset(local.azs) : toset([])
 
+  region                      = var.region
   destination_ipv6_cidr_block = can(regex("^pl-", var.transit_gateway_ipv6_routes["public"])) ? null : var.transit_gateway_ipv6_routes["public"]
   destination_prefix_list_id  = can(regex("^pl-", var.transit_gateway_ipv6_routes["public"])) ? var.transit_gateway_ipv6_routes["public"] : null
-
-  transit_gateway_id = var.transit_gateway_id
-  route_table_id     = aws_route_table.public[each.key].id
+  transit_gateway_id          = var.transit_gateway_id
+  route_table_id              = aws_route_table.public[each.key].id
 
   depends_on = [
     aws_ec2_transit_gateway_vpc_attachment.tgw
@@ -199,11 +213,11 @@ resource "aws_route" "ipv6_public_to_tgw" {
 resource "aws_route" "public_to_cwan" {
   for_each = (contains(local.subnet_keys, "public") && contains(local.subnets_cwan_routed, "public") && local.create_cwan_routes) ? toset(local.azs) : toset([])
 
+  region                     = var.region
   destination_cidr_block     = can(regex("^pl-", var.core_network_routes["public"])) ? null : var.core_network_routes["public"]
   destination_prefix_list_id = can(regex("^pl-", var.core_network_routes["public"])) ? var.core_network_routes["public"] : null
-
-  core_network_arn = var.core_network.arn
-  route_table_id   = aws_route_table.public[each.key].id
+  core_network_arn           = var.core_network.arn
+  route_table_id             = aws_route_table.public[each.key].id
 
   depends_on = [
     aws_networkmanager_vpc_attachment.cwan,
@@ -215,11 +229,11 @@ resource "aws_route" "public_to_cwan" {
 resource "aws_route" "ipv6_public_to_cwan" {
   for_each = (contains(local.subnet_keys, "public") && contains(local.ipv6_subnets_cwan_routed, "public") && local.create_cwan_routes) ? toset(local.azs) : toset([])
 
+  region                      = var.region
   destination_ipv6_cidr_block = can(regex("^pl-", var.core_network_ipv6_routes["public"])) ? null : var.core_network_ipv6_routes["public"]
   destination_prefix_list_id  = can(regex("^pl-", var.core_network_ipv6_routes["public"])) ? var.core_network_ipv6_routes["public"] : null
-
-  core_network_arn = var.core_network.arn
-  route_table_id   = aws_route_table.public[each.key].id
+  core_network_arn            = var.core_network.arn
+  route_table_id              = aws_route_table.public[each.key].id
 
   depends_on = [
     aws_networkmanager_vpc_attachment.cwan,
@@ -232,6 +246,7 @@ resource "aws_route" "ipv6_public_to_cwan" {
 resource "aws_subnet" "private" {
   for_each = toset(try(local.private_per_az, []))
 
+  region                                         = var.region
   availability_zone                              = split("/", each.key)[1]
   vpc_id                                         = local.vpc.id
   cidr_block                                     = can(local.calculated_subnets[split("/", each.key)[0]][split("/", each.key)[1]]) ? local.calculated_subnets[split("/", each.key)[0]][split("/", each.key)[1]] : null
@@ -256,6 +271,7 @@ resource "aws_subnet" "private" {
 resource "aws_route_table" "private" {
   for_each = toset(try(local.private_per_az, []))
 
+  region = var.region
   vpc_id = local.vpc.id
 
   tags = merge(
@@ -268,6 +284,7 @@ resource "aws_route_table" "private" {
 resource "aws_route_table_association" "private" {
   for_each = toset(try(local.private_per_az, []))
 
+  region         = var.region
   subnet_id      = aws_subnet.private[each.key].id
   route_table_id = aws_route_table.private[each.key].id
 }
@@ -276,6 +293,7 @@ resource "aws_route_table_association" "private" {
 resource "aws_route" "private_to_nat" {
   for_each = toset(try(local.private_subnet_names_nat_routed, []))
 
+  region                 = var.region
   route_table_id         = aws_route_table.private[each.key].id
   destination_cidr_block = "0.0.0.0/0"
   # try to get nat for AZ, else use singular nat
@@ -286,6 +304,7 @@ resource "aws_route" "private_to_nat" {
 resource "aws_route" "private_to_egress_only" {
   for_each = toset(try(local.private_subnet_names_egress_routed, []))
 
+  region                      = var.region
   route_table_id              = aws_route_table.private[each.key].id
   destination_ipv6_cidr_block = "::/0"
   egress_only_gateway_id      = aws_egress_only_internet_gateway.eigw[0].id
@@ -295,11 +314,11 @@ resource "aws_route" "private_to_egress_only" {
 resource "aws_route" "private_to_tgw" {
   for_each = toset(local.private_subnet_key_names_tgw_routed)
 
+  region                     = var.region
   destination_cidr_block     = can(regex("^pl-", var.transit_gateway_routes[split("/", each.key)[0]])) ? null : var.transit_gateway_routes[split("/", each.key)[0]]
   destination_prefix_list_id = can(regex("^pl-", var.transit_gateway_routes[split("/", each.key)[0]])) ? var.transit_gateway_routes[split("/", each.key)[0]] : null
-
-  route_table_id     = aws_route_table.private[each.key].id
-  transit_gateway_id = var.transit_gateway_id
+  route_table_id             = aws_route_table.private[each.key].id
+  transit_gateway_id         = var.transit_gateway_id
 
   depends_on = [
     aws_ec2_transit_gateway_vpc_attachment.tgw
@@ -310,11 +329,11 @@ resource "aws_route" "private_to_tgw" {
 resource "aws_route" "ipv6_private_to_tgw" {
   for_each = toset(local.ipv6_private_subnet_key_names_tgw_routed)
 
+  region                      = var.region
   destination_ipv6_cidr_block = can(regex("^pl-", var.transit_gateway_ipv6_routes[split("/", each.key)[0]])) ? null : var.transit_gateway_ipv6_routes[split("/", each.key)[0]]
   destination_prefix_list_id  = can(regex("^pl-", var.transit_gateway_ipv6_routes[split("/", each.key)[0]])) ? var.transit_gateway_ipv6_routes[split("/", each.key)[0]] : null
-
-  route_table_id     = aws_route_table.private[each.key].id
-  transit_gateway_id = var.transit_gateway_id
+  route_table_id              = aws_route_table.private[each.key].id
+  transit_gateway_id          = var.transit_gateway_id
 
   depends_on = [
     aws_ec2_transit_gateway_vpc_attachment.tgw
@@ -328,11 +347,11 @@ resource "aws_route" "private_to_cwan" {
     if local.create_cwan_routes
   }
 
+  region                     = var.region
   destination_cidr_block     = can(regex("^pl-", var.core_network_routes[split("/", each.key)[0]])) ? null : var.core_network_routes[split("/", each.key)[0]]
   destination_prefix_list_id = can(regex("^pl-", var.core_network_routes[split("/", each.key)[0]])) ? var.core_network_routes[split("/", each.key)[0]] : null
-
-  core_network_arn = var.core_network.arn
-  route_table_id   = aws_route_table.private[each.key].id
+  core_network_arn           = var.core_network.arn
+  route_table_id             = aws_route_table.private[each.key].id
 
   depends_on = [
     aws_networkmanager_vpc_attachment.cwan,
@@ -347,11 +366,11 @@ resource "aws_route" "ipv6_private_to_cwan" {
     if local.create_cwan_routes
   }
 
+  region                      = var.region
   destination_ipv6_cidr_block = can(regex("^pl-", var.core_network_ipv6_routes[split("/", each.key)[0]])) ? null : var.core_network_ipv6_routes[split("/", each.key)[0]]
   destination_prefix_list_id  = can(regex("^pl-", var.core_network_ipv6_routes[split("/", each.key)[0]])) ? var.core_network_ipv6_routes[split("/", each.key)[0]] : null
-
-  core_network_arn = var.core_network.arn
-  route_table_id   = aws_route_table.private[each.key].id
+  core_network_arn            = var.core_network.arn
+  route_table_id              = aws_route_table.private[each.key].id
 
   depends_on = [
     aws_networkmanager_vpc_attachment.cwan,
@@ -364,6 +383,7 @@ resource "aws_route" "ipv6_private_to_cwan" {
 resource "aws_subnet" "tgw" {
   for_each = contains(local.subnet_keys, "transit_gateway") ? toset(local.azs) : toset([])
 
+  region            = var.region
   availability_zone = each.key
   vpc_id            = local.vpc.id
   cidr_block        = local.calculated_subnets["transit_gateway"][each.key]
@@ -381,6 +401,7 @@ resource "aws_subnet" "tgw" {
 resource "aws_route_table" "tgw" {
   for_each = contains(local.subnet_keys, "transit_gateway") ? toset(local.azs) : toset([])
 
+  region = var.region
   vpc_id = local.vpc.id
 
   tags = merge(
@@ -393,6 +414,7 @@ resource "aws_route_table" "tgw" {
 resource "aws_route_table_association" "tgw" {
   for_each = contains(local.subnet_keys, "transit_gateway") ? toset(local.azs) : toset([])
 
+  region         = var.region
   subnet_id      = aws_subnet.tgw[each.key].id
   route_table_id = aws_route_table.tgw[each.key].id
 }
@@ -401,6 +423,7 @@ resource "aws_route_table_association" "tgw" {
 resource "aws_route" "tgw_to_nat" {
   for_each = (try(var.subnets.transit_gateway.connect_to_public_natgw == true, false) && contains(local.subnet_keys, "public")) ? toset(local.azs) : toset([])
 
+  region                 = var.region
   route_table_id         = aws_route_table.tgw[each.key].id
   destination_cidr_block = "0.0.0.0/0"
   # try to get nat for AZ, else use singular nat
@@ -411,10 +434,10 @@ resource "aws_route" "tgw_to_nat" {
 resource "aws_ec2_transit_gateway_vpc_attachment" "tgw" {
   count = contains(local.subnet_keys, "transit_gateway") ? 1 : 0
 
-  subnet_ids         = values(aws_subnet.tgw)[*].id
-  transit_gateway_id = var.transit_gateway_id
-  vpc_id             = local.vpc.id
-
+  region                                          = var.region
+  subnet_ids                                      = values(aws_subnet.tgw)[*].id
+  transit_gateway_id                              = var.transit_gateway_id
+  vpc_id                                          = local.vpc.id
   transit_gateway_default_route_table_association = try(var.subnets.transit_gateway.transit_gateway_default_route_table_association, null)
   transit_gateway_default_route_table_propagation = try(var.subnets.transit_gateway.transit_gateway_default_route_table_propagation, null)
   appliance_mode_support                          = try(var.subnets.transit_gateway.transit_gateway_appliance_mode_support, "disable")
@@ -434,6 +457,7 @@ resource "aws_ec2_transit_gateway_vpc_attachment" "tgw" {
 resource "aws_subnet" "cwan" {
   for_each = contains(local.subnet_keys, "core_network") ? toset(local.azs) : toset([])
 
+  region            = var.region
   availability_zone = each.key
   vpc_id            = local.vpc.id
   cidr_block        = local.calculated_subnets["core_network"][each.key]
@@ -450,6 +474,7 @@ resource "aws_subnet" "cwan" {
 resource "aws_route_table" "cwan" {
   for_each = contains(local.subnet_keys, "core_network") ? toset(local.azs) : toset([])
 
+  region = var.region
   vpc_id = local.vpc.id
 
   tags = merge(
@@ -462,6 +487,7 @@ resource "aws_route_table" "cwan" {
 resource "aws_route_table_association" "cwan" {
   for_each = contains(local.subnet_keys, "core_network") ? toset(local.azs) : toset([])
 
+  region         = var.region
   subnet_id      = aws_subnet.cwan[each.key].id
   route_table_id = aws_route_table.cwan[each.key].id
 }
@@ -470,6 +496,7 @@ resource "aws_route_table_association" "cwan" {
 resource "aws_route" "cwan_to_nat" {
   for_each = (try(var.subnets.core_network.connect_to_public_natgw == true, false) && contains(local.subnet_keys, "public")) ? toset(local.azs) : toset([])
 
+  region                 = var.region
   route_table_id         = aws_route_table.cwan[each.key].id
   destination_cidr_block = "0.0.0.0/0"
   # try to get nat for AZ, else use singular nat
@@ -521,6 +548,7 @@ module "flow_logs" {
 resource "aws_vpclattice_service_network_vpc_association" "vpc_lattice_service_network_association" {
   count = local.lattice_association ? 1 : 0
 
+  region                     = var.region
   vpc_identifier             = aws_vpc.main[0].id
   service_network_identifier = var.vpc_lattice.service_network_identifier
   security_group_ids         = try(var.vpc_lattice.security_group_ids, null)

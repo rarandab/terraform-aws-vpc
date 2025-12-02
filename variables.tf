@@ -416,3 +416,10 @@ EOF
     ])) == 0
   }
 }
+
+variable "region" {
+  description = "Region to be used in resources creation."
+  type        = string
+  default     = null
+  nullable    = true
+}

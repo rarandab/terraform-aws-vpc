@@ -120,6 +120,8 @@ locals {
 }
 
 data "aws_availability_zones" "current" {
+  region = var.region
+
   filter {
     name   = "opt-in-status"
     values = ["opt-in-not-required"]
@@ -157,7 +159,9 @@ data "aws_availability_zones" "current" {
 # search for existing vpc with var.vpc_id if not creating
 data "aws_vpc" "main" {
   count = var.create_vpc ? 0 : 1
-  id    = var.vpc_id
+
+  region = var.region
+  id     = var.vpc_id
 }
 
 # santizes tags for both aws / awscc providers
