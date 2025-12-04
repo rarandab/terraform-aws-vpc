@@ -533,10 +533,10 @@ resource "aws_networkmanager_attachment_accepter" "cwan" {
 
 # FLOW LOGS
 module "flow_logs" {
-  count = local.create_flow_logs ? 1 : 0
-
+  count  = local.create_flow_logs ? 1 : 0
   source = "./modules/flow_logs"
 
+  region              = var.region
   name                = local.log_name
   flow_log_definition = var.vpc_flow_logs
   vpc_id              = local.vpc.id

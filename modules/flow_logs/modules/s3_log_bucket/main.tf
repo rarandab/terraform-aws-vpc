@@ -1,12 +1,13 @@
 #tfsec:ignore:aws-s3-encryption-customer-key tfsec:ignore:aws-s3-enable-bucket-logging tfsec:ignore:aws-s3-enable-versioning
 resource "aws_s3_bucket" "flow_logs" {
+  region        = var.region
   bucket_prefix = "vpc-flow-logs-${var.name}"
   force_destroy = true
 }
 
 resource "aws_s3_bucket_public_access_block" "flow_logs" {
-  bucket = aws_s3_bucket.flow_logs.bucket
-
+  region                  = var.region
+  bucket                  = aws_s3_bucket.flow_logs.bucket
   block_public_acls       = true
   block_public_policy     = true
   ignore_public_acls      = true
@@ -15,6 +16,7 @@ resource "aws_s3_bucket_public_access_block" "flow_logs" {
 
 #tfsec:ignore:aws-s3-encryption-customer-key
 resource "aws_s3_bucket_server_side_encryption_configuration" "flow_logs" {
+  region = var.region
   bucket = aws_s3_bucket.flow_logs.bucket
 
   rule {
@@ -25,6 +27,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "flow_logs" {
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "flow_logs" {
+  region = var.region
   bucket = aws_s3_bucket.flow_logs.bucket
 
   rule {
